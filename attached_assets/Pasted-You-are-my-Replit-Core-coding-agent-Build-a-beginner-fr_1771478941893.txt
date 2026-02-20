@@ -1,0 +1,54 @@
+You are my Replit Core coding agent. Build a beginner-friendly “Spotify Daylist Archiver” web app. Use Next.js 14+ (App Router) + TypeScript. Use next-auth with the Spotify provider for OAuth (Authorization Code flow). Persist data with Prisma + SQLite (so it works inside Replit with zero external setup). Deploy the web app as an Autoscale/regular web deployment, and create a separate Scheduled Deployment (worker) that runs every 2 hours and calls the archive logic.
+
+GOAL:
+- User signs in with Spotify.
+- App attempts to detect the user’s current Daylist playlist and, on each change, creates a NEW Spotify playlist named like: “Daylist Archive — YYYY-MM-DD HH:mm” and copies the tracks into it.
+- If Daylist is restricted/unreadable (API returns 403/404 or empty), show a clear UI banner explaining Daylist is restricted and let the user pick a “Source Playlist” from their own playlists to archive instead (e.g., a “Daylist Mirror” playlist). The scheduled job will then archive that chosen playlist whenever it changes.
+
+REQUIREMENTS:
+1) Spotify OAuth + Scopes:
+   - playlist-read-private
+   - playlist-read-collaborative
+   - playlist-modify-private
+   (Only request playlist-modify-public if user explicitly chooses public archives.)
+2) Spotify Web API calls:
+   - Get current user profile (/me)
+   - List current user playlists (paged) to (a) find Daylist if possible by name includes “daylist” and (b) populate playlist picker
+   - Get playlist items (paged) for the chosen source playlist (Daylist if accessible, else user-selected)
+   - Create playlist for current user (private by default)
+   - Add items to playlist (batch of up to 100 URIs per request)
+3) Change detection:
+   - For each source playlist, compute signature = sha256(join(track_uri in order)).
+   - Only archive if signature differs from last stored signature for that user+source playlist.
+4) Database (Prisma + SQLite):
+   - User: id, email, spotifyUserId
+   - SourcePlaylist: id, userId, spotifyPlaylistId, name, isDaylistAttempt(boolean), enabled(boolean)
+   - Snapshot: id, userId, sourcePlaylistId, createdAt, signature, archivePlaylistId, archivePlaylistUrl
+   - (Optional) SnapshotTrack: snapshotId, position, trackUri, trackName, artistName (store minimal metadata)
+5) UI pages:
+   - “/” landing with “Sign in with Spotify”
+   - “/dashboard” shows: selected source playlist, last run status, list of archived snapshots (with links to open in Spotify)
+   - Playlist picker component to select a source playlist if Daylist fails
+6) Worker / Scheduling:
+   - Implement core archive function in a shared module (e.g., src/lib/archive.ts).
+   - Web route: POST /api/archive/run (protected: only allow requests with CRON_SECRET header or from server)
+   - Scheduled deployment runs node scripts/worker.ts every 2 hours; it loads DB, iterates enabled SourcePlaylists, refreshes token via next-auth/Spotify refresh flow (or stores refresh token securely in DB via next-auth adapter), then calls archive function.
+7) Security / Vibe-coding practices:
+   - Put all secrets in Replit Secrets: SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, NEXTAUTH_SECRET, NEXTAUTH_URL, CRON_SECRET.
+   - Provide .env.example and a README with exact setup steps (Spotify dashboard redirect URI, running prisma migrate, starting dev server, creating scheduled deployment).
+   - Add structured logging in the worker and API route. Errors should be visible on dashboard (“last error”).
+   - Build in small vertical slices: (1) auth works, (2) list playlists works, (3) manual “Archive now” button works, (4) change detection + snapshots works, (5) scheduled worker works.
+8) Spotify Daylist restriction handling:
+   - When attempting Daylist fetch: if no playlist found or playlist items cannot be fetched, record a “DaylistRestricted” status and prompt user to choose a source playlist; do NOT crash.
+   - Explain in UI: “Spotify restricts access to some algorithmic/Spotify-owned playlists for standard developer apps; select another playlist to archive automatically.”
+
+DELIVERABLES:
+- Full Next.js project code with TypeScript.
+- Prisma schema + migration.
+- next-auth config with Spotify provider + refresh token handling.
+- API route /api/archive/run and /api/playlists (to fetch playlists for picker).
+- worker.ts script for scheduled deployment.
+- README with step-by-step instructions for a total beginner (exact clicks in Spotify developer dashboard for redirect URIs; exact Replit commands).
+- Make everything runnable in Replit with one click after setting secrets.
+
+IMPORTANT: Keep code simple, well-commented, and avoid unnecessary libraries. If any step is ambiguous, make a reasonable default and document it in README.
